@@ -1,40 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCandidateById, saveCandidate } from '@/data/storage';
-import { CandidateDTO, ErrorResponse, DecisionRequest, DecisionAction } from '@/contracts/candidate';
+import { CandidateService } from '@/application/candidate-service';
+import { candidateRepository } from '@/infrastructure/candidate-repository';
+import { ValidationError, InvalidStatusTransitionError, CandidateNotFoundError, INTERNAL_SERVER_ERROR_MESSAGE } from '@/domain/errors';
+import { DecisionAction, ErrorResponse } from '@/contracts/candidate';
+
+const service = new CandidateService(candidateRepository);
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const candidateId = params.id;
-
   try {
-    const body = await request.json() as any;
-    const decision = body.decision;
-    const reason = body.reason;
-    
-    const candidate = getCandidateById(candidateId);
-    
-    let newStatus;
-    if (decision === 'SHORTLIST') {
-      newStatus = 'SHORTLISTED';
-    } else if (decision === 'REJECT') {
-      newStatus = 'REJECTED';
-    }
-    candidate!.status = newStatus;
-    
-    saveCandidate(candidate!);
+    const { id: candidateId } = await params;
+    const body: { decision?: DecisionAction; reason?: string } = await request.json();
 
-    const response = {
-      id: candidate!.id,
-      name: candidate!.name,
-      status: candidate!.status,
-    };
+    const updated = service.applyDecision(
+      candidateId,
+      body.decision ?? ('' as DecisionAction),
+      body.reason ?? ''
+    );
 
-    return NextResponse.json(response, { status: 200 });
+    return NextResponse.json(updated, { status: 200 });
   } catch (error) {
+    if (error instanceof CandidateNotFoundError) {
+      return NextResponse.json(
+        { error: error.message, code: 'NOT_FOUND' } satisfies ErrorResponse,
+        { status: 404 }
+      );
+    }
+    if (error instanceof InvalidStatusTransitionError) {
+      return NextResponse.json(
+        { error: error.message, code: 'INVALID_TRANSITION' } satisfies ErrorResponse,
+        { status: 409 }
+      );
+    }
+    if (error instanceof ValidationError) {
+      return NextResponse.json(
+        { error: error.message, code: 'VALIDATION_ERROR' } satisfies ErrorResponse,
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
-      { error: 'Error' } as ErrorResponse,
+      { error: INTERNAL_SERVER_ERROR_MESSAGE, code: 'INTERNAL_ERROR' } satisfies ErrorResponse,
       { status: 500 }
     );
   }

@@ -19,4 +19,5 @@ export interface DecisionRequest {
 
 export interface ErrorResponse {
   error: string;
+  code: 'VALIDATION_ERROR' | 'NOT_FOUND' | 'INVALID_TRANSITION' | 'INTERNAL_ERROR';
 }

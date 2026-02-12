@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllCandidates, saveCandidate, generateNextId } from '@/data/storage';
-import { Candidate } from '@/models/candidate';
-import { CandidateDTO, CreateCandidateRequest, ErrorResponse } from '@/contracts/candidate';
+import { CandidateService } from '@/application/candidate-service';
+import { candidateRepository } from '@/infrastructure/candidate-repository';
+import { ValidationError, INTERNAL_SERVER_ERROR_MESSAGE } from '@/domain/errors';
+import { ErrorResponse } from '@/contracts/candidate';
+
+const service = new CandidateService(candidateRepository);
 
 export async function GET() {
   try {
-    const candidates = getAllCandidates();
-    
-    const response: CandidateDTO[] = candidates.map(c => ({
-      id: c.id,
-      name: c.name,
-      status: c.status,
-    }));
-
-    return NextResponse.json(response);
-  } catch (error) {
+    const candidates = service.listCandidates();
+    return NextResponse.json(candidates);
+  } catch {
     return NextResponse.json(
-      { error: 'Error' } as ErrorResponse,
+      { error: INTERNAL_SERVER_ERROR_MESSAGE, code: 'INTERNAL_ERROR' } satisfies ErrorResponse,
       { status: 500 }
     );
   }
@@ -24,23 +20,18 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as any;
-    const name = body.name;
-
-    const id = generateNextId();
-    const candidate = Candidate.create(id, name);
-    saveCandidate(candidate);
-
-    const response = {
-      id: candidate.id,
-      name: candidate.name,
-      status: candidate.status,
-    };
-
-    return NextResponse.json(response, { status: 201 });
+    const body: { name?: string } = await request.json();
+    const candidate = service.createCandidate(body.name ?? '');
+    return NextResponse.json(candidate, { status: 201 });
   } catch (error) {
+    if (error instanceof ValidationError) {
+      return NextResponse.json(
+        { error: error.message, code: 'VALIDATION_ERROR' } satisfies ErrorResponse,
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
-      { error: 'Error' } as ErrorResponse,
+      { error: INTERNAL_SERVER_ERROR_MESSAGE, code: 'INTERNAL_ERROR' } satisfies ErrorResponse,
       { status: 500 }
     );
   }
